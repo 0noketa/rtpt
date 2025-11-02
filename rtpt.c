@@ -6,7 +6,7 @@
 #include <stdint.h>
 #include "rtpt.h"
 
-#if RTPT_TARGET == RTPT_TARGET_PTHREADS
+#if RTPT_TARGET == RTPT_TARGET_PTHREAD
 #include <signal.h>
 #include <unistd.h>
 #include <time.h>
@@ -32,50 +32,100 @@ int RTPT_Init() {
     return 1;
 }
 
-int RTPT_CreateTask(void *ctx, int (*task_func)(void*)) {
-    if (RTPT_tasks_count >= RTPT_MAX_TASKS) return 0;
+RTPT_TaskID RTPT_CreateTask(void *ctx, int (*task_func)(void*)) {
+    if (RTPT_tasks_count >= RTPT_MAX_TASKS) return -1;
 
-    RTPT_Task *new_task = &RTPT_tasks[RTPT_tasks_count++];
+    RTPT_Task *new_task = &RTPT_tasks[RTPT_tasks_count];
     new_task->task_func = task_func;
     new_task->ctx = ctx;
     new_task->next_tick = 0;
-    new_task->skipped = 1;
-    new_task->stopped = 0;
+    new_task->state = RTPT_STATE_SKIPPED;
     LC_INIT(((RTPT_TaskContext*)ctx)->lc);
-    return 1;
+    return (RTPT_TaskID)RTPT_tasks_count++;
 }
+
+#ifndef RTPT_INCLUDE_COUNT
+static
+#endif
 int RTPT_CountActiveTasks() {
     int count = 0;
     for (int i = 0; i < RTPT_tasks_count; ++i) {
-        count += !RTPT_tasks[i].stopped;
+        count += (RTPT_tasks[i].state & RTPT_STATE_STOPPED) == 0;
     }
     return count;
 }
-int RTPT_FindTask(uint16_t tick) {
+#ifdef RTPT_INCLUDE_SUSPEND
+int RTPT_SuspendTask(RTPT_TaskID task_id) {
+    if (task_id < 0 || task_id >= RTPT_tasks_count) return 0;
+
+    RTPT_Task *task = &RTPT_tasks[task_id];
+    if (task->state & RTPT_STATE_EXITED) return 0;
+    if (task->state & RTPT_STATE_SUSPENDED) return 0;
+
+    task->state |= RTPT_STATE_SUSPENDED;
+    return 1;
+}
+int RTPT_ResumeTask(RTPT_TaskID task_id) {
+    if (task_id < 0 || task_id >= RTPT_tasks_count) return 0;
+
+    RTPT_Task *task = &RTPT_tasks[task_id];
+    if (task->state & RTPT_STATE_EXITED) return 0;
+    if (~task->state & RTPT_STATE_SUSPENDED) return 0;
+
+    task->state ^= RTPT_STATE_SUSPENDED;
+    task->state |= RTPT_STATE_SKIPPED;
+    return 1;
+}
+#endif
+
+#ifdef RTPT_INCLUDE_KILL
+int RTPT_KillTask(RTPT_TaskID task_id) {
+    if (task_id < 0 || task_id >= RTPT_tasks_count) return 0;
+
+    RTPT_Task *task = &RTPT_tasks[task_id];
+    if (task->state & RTPT_STATE_EXITED) return 0;
+
+    task->state |= RTPT_STATE_EXITED;
+    return 1;
+}
+void RTPT_KillTasks() {
     for (int i = 0; i < RTPT_tasks_count; ++i) {
-        if (RTPT_tasks[i].stopped) continue;
-        if (RTPT_tasks[i].skipped) return i;
-        if (RTPT_tasks[i].next_tick == tick) return i;
+        RTPT_tasks[i].state |= RTPT_STATE_EXITED;
+    }
+}
+#endif
+
+static int RTPT_FindNextTask(uint16_t tick) {
+    for (int i = 0; i < RTPT_tasks_count; ++i) {
+        RTPT_Task *task = &RTPT_tasks[i];
+        if (task->state & RTPT_STATE_STOPPED) continue;
+        if (task->state & RTPT_STATE_SKIPPED) {
+            task->state ^= RTPT_STATE_SKIPPED;
+            return i;
+        }
+        if (task->next_tick == tick) return i;
     }
     return -1;
 }
-void RTPT_MarkSkippedTasks(uint16_t start_tick, uint16_t end_tick) {
+static void RTPT_MarkSkippedTasks(uint16_t start_tick, uint16_t end_tick) {
     if (start_tick <= end_tick) {
         for (int i = 0; i < RTPT_tasks_count; ++i) {
-            if (!RTPT_tasks[i].stopped
-                    && RTPT_tasks[i].next_tick >= start_tick
-                    && RTPT_tasks[i].next_tick < end_tick
+            RTPT_Task *task = &RTPT_tasks[i];
+            if ((~task->state & RTPT_STATE_STOPPED)
+                    && task->next_tick >= start_tick
+                    && task->next_tick < end_tick
             ) {
-                RTPT_tasks[i].skipped = 1;
+                task->state |= RTPT_STATE_SKIPPED;
             }
         }
     } else {
         for (int i = 0; i < RTPT_tasks_count; ++i) {
-            if (!RTPT_tasks[i].stopped
-                    && (RTPT_tasks[i].next_tick >= start_tick
-                        || RTPT_tasks[i].next_tick < end_tick)
+            RTPT_Task *task = &RTPT_tasks[i];
+            if (~task->state & RTPT_STATE_STOPPED
+                    && (task->next_tick >= start_tick
+                        || task->next_tick < end_tick)
             ) {
-                RTPT_tasks[i].skipped = 1;
+                task->state |= RTPT_STATE_SKIPPED;
             }
         }
     }
@@ -83,7 +133,7 @@ void RTPT_MarkSkippedTasks(uint16_t start_tick, uint16_t end_tick) {
 
 
 // nanosleep const
-#if RTPT_TARGET == RTPT_TARGET_POSIX || RTPT_TARGET == RTPT_TARGET_PTHREADS
+#if RTPT_TARGET == RTPT_TARGET_POSIX || RTPT_TARGET == RTPT_TARGET_PTHREAD
     static const struct timespec nanosleep_tick = {
         .tv_sec = 0,
         .tv_nsec = RTPT_TICK_MS * 1000000L  // ms
@@ -91,7 +141,7 @@ void RTPT_MarkSkippedTasks(uint16_t start_tick, uint16_t end_tick) {
 #endif
 
 // async tick counter
-#if RTPT_TARGET == RTPT_TARGET_PTHREADS
+#if RTPT_TARGET == RTPT_TARGET_PTHREAD
 static pthread_t RTPT_isr_thread;
 
 static void RTPT_isr_cleanup(void *_) {
@@ -132,7 +182,7 @@ void RTPT_StartTasks() {
     RTPT_tick = 0;
 
     // setup async tick counter
-    #if RTPT_TARGET == RTPT_TARGET_PTHREADS
+    #if RTPT_TARGET == RTPT_TARGET_PTHREAD
         if (pthread_create(&RTPT_isr_thread, NULL, RTPT_isr, NULL) != 0) {
             return;
         }
@@ -150,14 +200,14 @@ void RTPT_StartTasks() {
 
     while (RTPT_CountActiveTasks()) {
         uint16_t tick0 = RTPT_tick;
-        int task_id = RTPT_FindTask(tick0);
+        int task_id = RTPT_FindNextTask(tick0);
         if (task_id == -1) {
             // sync tick counter
             #if RTPT_TARGET == RTPT_TARGET_POSIX
                 nanosleep(&nanosleep_tick, NULL);
                 ++RTPT_tick;
             #elif RTPT_TARGET == RTPT_TARGET_WIN32
-                Sleep(0.001);
+                Sleep(RTPT_TICK_MS);
                 ++RTPT_tick;
             #endif
 
@@ -166,15 +216,14 @@ void RTPT_StartTasks() {
 
         RTPT_Task *task = &RTPT_tasks[task_id];
         int interval = task->task_func(task->ctx);
-        task->skipped = 0;
-        task->stopped = (interval == 0);
+        if (interval == 0) task->state |= RTPT_STATE_EXITED;
 
         // sync tick counter
         #if RTPT_TARGET == RTPT_TARGET_POSIX
             nanosleep(&nanosleep_tick, NULL);
             ++RTPT_tick;
         #elif RTPT_TARGET == RTPT_TARGET_WIN32
-            Sleep(0.001);
+            Sleep(RTPT_TICK_MS);
             ++RTPT_tick;
         #endif
 
@@ -185,7 +234,7 @@ void RTPT_StartTasks() {
     }
 
     // cleanup async tick counter
-    #if RTPT_TARGET == RTPT_TARGET_PTHREADS
+    #if RTPT_TARGET == RTPT_TARGET_PTHREAD
         pthread_cancel(RTPT_isr_thread);
     #elif RTPT_TARGET == RTPT_TARGET_PIC_XC8
         #if RTPT_CONFIG_PIC_XC8_TMR == 0
