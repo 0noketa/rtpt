@@ -4,6 +4,7 @@
 
 
 #include <stdio.h>
+#include "rtpt_config.h"
 #include "rtpt.h"
 
 
@@ -25,7 +26,7 @@ typedef struct {
     int i;
 } Task1Context;
 
-int task1(void *param) {
+uint16_t task1(void *param) {
     Task1Context *ctx = param;
     RTPT_BEGIN(ctx);
 
