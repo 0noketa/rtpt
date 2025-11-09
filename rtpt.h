@@ -48,17 +48,17 @@ typedef int8_t RTPT_TaskID;
 
 extern volatile uint16_t RTPT_tick;  // replaced in ISR
 
-int RTPT_Init();
+int_fast8_t RTPT_Init();
 RTPT_TaskID RTPT_CreateTask(void *ctx, uint16_t (*task_func)(void*));
 #ifdef RTPT_INCLUDE_COUNT
-int RTPT_CountActiveTasks();
+int_fast8_t RTPT_CountActiveTasks();
 #endif
 #ifdef RTPT_INCLUDE_SUSPEND
-int RTPT_SuspendTask(RTPT_TaskID task_id);
-int RTPT_ResumeTask(RTPT_TaskID task_id);
+int_fast8_t RTPT_SuspendTask(RTPT_TaskID task_id);
+int_fast8_t RTPT_ResumeTask(RTPT_TaskID task_id);
 #endif
 #ifdef RTPT_INCLUDE_KILL
-int RTPT_KillTask(RTPT_TaskID task_id);
+int_fast8_t RTPT_KillTask(RTPT_TaskID task_id);
 void RTPT_KillTasks();
 #endif
 void RTPT_StartTasks();

@@ -118,7 +118,7 @@ extern "C" {
 // 31kHz (OSC = INTIO67)
 //#define _XTAL_FREQ 31000
 #elif IS_18F46J50_family
-// 8MHz (OSC = INTIO67)
+// 8MHz (OSC = INTOSC)
 #define _XTAL_FREQ 8000000
 #elif IS_12F675_family
 //// external
@@ -194,46 +194,6 @@ extern "C" {
 
 #define KHZ_TO_IRCF(khz) HZ_TO_IRCF(khz ## 000)
 #define MHZ_TO_IRCF(mhz) KHZ_TO_IRCF(mhz ## 000)
-
-#if IS_18F4520_family
-#define delay_ms(x) do { \
-    uint8_t ircf0 = OSCCONbits.IRCF; \
-    OSCCONbits.IRCF = KHZ_TO_IRCF(31000); \
-    TMR0ON = 0; \
-    T0CS = 0; \
-    T08BIT = 0; \
-    T0PS = 4; \
-    TMR0IE = 1; \
-    uint16_t n = (unsigned long)(x) * (31000/32000.0); \
-    TMR0L = n & 0xFF; \
-    TMR0H = n >> 8; \
-    TMR0IE = 1; \
-    TMR0ON = 1; \
-    SLEEP(); \
-    TMR0ON = 0; \
-    OSCCONbits.IRCF = ircf0; \
-} while(0)
-#else
-#define delay_ms(x) do { \
-    uint8_t ircf0 = OSCCONbits.IRCF; \
-    OSCCONbits.IRCF = KHZ_TO_IRCF(31000); \
-    _delay((unsigned long)((x) * (31000/4000.0))); \
-    OSCCONbits.IRCF = ircf0; \
-} while(0)
-#endif
-#define delay_x_s(x) do { \
-    uint8_t ircf0 = OSCCONbits.IRCF; \
-    OSCCONbits.IRCF = KHZ_TO_IRCF(31000); \
-    for (int i = x; i--;) _delay((unsigned long)(1000 * (31000/4000.0))); \
-    OSCCONbits.IRCF = ircf0; \
-} while(0)
-#define delay_x_10s(x) do { \
-    uint8_t ircf0 = OSCCONbits.IRCF; \
-    OSCCONbits.IRCF = KHZ_TO_IRCF(31000); \
-    for (int i = x; i--;) _delay((unsigned long)(10000 * (31000/4000.0))); \
-    OSCCONbits.IRCF = ircf0; \
-} while(0)
-
 
     
 #ifdef	__cplusplus

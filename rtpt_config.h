@@ -18,8 +18,13 @@
 #define RTPT_TARGET RTPT_TARGET_PIC_XC8
 // #define RTPT_TARGET RTPT_TARGET_PTHREAD
 
+// 0: stop task scheduler when all task are stopped, 1: task sceduler will not stop
+#define RTPT_CONFIG_CONTINUOUS 0
+
 // 0: Timer0(16-bit), 1: Timer1(16-bit), 3: Timer3(16-bit), 10: Timer0(8-bit)
 #define RTPT_CONFIG_PIC_TMR 0
+// 0: use busy-waiting + Timer0(8-bit) and ignore RTPT_CONFIG_PIC_TMR, 1: use interrupts
+#define RTPT_CONFIG_PIC_INT 1
 
 // #define RTPT_INCLUDE_COUNT
 // #define RTPT_INCLUDE_SUSPEND
@@ -33,7 +38,7 @@
     #elif defined(_18F24J50)
         #define RTPT_CONFIG_PIC_TMR_FREQ 8000000
     #elif defined(_16F505)
-        #define RTPT_CONFIG_PIC_TMR_FREQ -1
+        #define RTPT_CONFIG_PIC_TMR_FREQ 4000000
     #elif defined(_12F675)
         #define RTPT_CONFIG_PIC_TMR_FREQ 4000000
     #endif
