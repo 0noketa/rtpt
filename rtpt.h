@@ -11,6 +11,7 @@
 
 
 #define RTPT_BEGIN(ctx) LC_RESUME((ctx)->rtpt_ctx.lc)
+
 #ifdef __LC_ADDRLABELS_H__
 #define RTPT_DELAY(ctx, interval) do { (ctx)->rtpt_ctx.lc = &&LC_CONCAT(LC_LABEL,__LINE__); return !(interval) ? 1 : (interval) / RTPT_TICK_MS; LC_SET((ctx)->rtpt_ctx.lc); } while (0)
 #define RTPT_EXIT(ctx) do { (ctx)->rtpt_ctx.lc = &&RTPT_EXIT_LABEL; return 0; } while (0)
@@ -27,7 +28,12 @@ typedef struct {
 } RTPT_TaskContext;
 #endif
 
-#define RTPT_BEGIN_TASK(name, type, ctx_name) uint16_t name(void *rtpt_param) { type *ctx_name = rtpt_param; RTPT_BEGIN(ctx_name);
+#if RTPT_CONFIG_STATIC == 1
+#define RTPT_BEGIN_TASK(name, type, ctx_name, ctx_var_name) type ctx_var_name; uint16_t name(void) { type *const ctx_name = &ctx_var_name; RTPT_BEGIN(ctx_name);
+#else
+#define RTPT_BEGIN_TASK(name, type, ctx_name) uint16_t name(void *rtpt_param) { type *const ctx_name = rtpt_param; RTPT_BEGIN(ctx_name);
+#endif
+
 #define RTPT_END_TASK(ctx) RTPT_END(ctx); }
 
 enum RTPT_TaskState {
@@ -38,8 +44,12 @@ enum RTPT_TaskState {
 };
 
 typedef struct {
+#if RTPT_CONFIG_STATIC == 1
+    uint16_t (*task_func)(void);
+#else
     uint16_t (*task_func)(void*);
     void *ctx;
+#endif
     uint16_t next_tick;
     uint8_t state;
 } RTPT_Task;
@@ -49,7 +59,11 @@ typedef int8_t RTPT_TaskID;
 extern volatile uint16_t RTPT_tick;  // replaced in ISR
 
 int_fast8_t RTPT_Init();
+#if RTPT_CONFIG_STATIC == 1
+RTPT_TaskID RTPT_CreateTask(void *ctx, uint16_t (*task_func)(void));
+#else
 RTPT_TaskID RTPT_CreateTask(void *ctx, uint16_t (*task_func)(void*));
+#endif
 #ifdef RTPT_INCLUDE_COUNT
 int_fast8_t RTPT_CountActiveTasks();
 #endif

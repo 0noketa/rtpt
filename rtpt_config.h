@@ -18,13 +18,16 @@
 #define RTPT_TARGET RTPT_TARGET_PIC_XC8
 // #define RTPT_TARGET RTPT_TARGET_PTHREAD
 
+// 0: context variable == argument. task functions can be used for multiple tasks. 1: context variable == global variable
+#define RTPT_CONFIG_STATIC 1
+
 // 0: stop task scheduler when all task are stopped, 1: task sceduler will not stop
 #define RTPT_CONFIG_CONTINUOUS 0
 
 // 0: Timer0(16-bit), 1: Timer1(16-bit), 3: Timer3(16-bit), 10: Timer0(8-bit)
 #define RTPT_CONFIG_PIC_TMR 0
 // 0: use busy-waiting + Timer0(8-bit) and ignore RTPT_CONFIG_PIC_TMR, 1: use interrupts
-#define RTPT_CONFIG_PIC_INT 1
+#define RTPT_CONFIG_PIC_INT 0
 
 // #define RTPT_INCLUDE_COUNT
 // #define RTPT_INCLUDE_SUSPEND

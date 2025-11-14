@@ -38,12 +38,19 @@ int_fast8_t RTPT_Init() {
     return 1;
 }
 
-RTPT_TaskID RTPT_CreateTask(void *ctx, uint16_t (*task_func)(void*)) {
+#if RTPT_CONFIG_STATIC == 1
+RTPT_TaskID RTPT_CreateTask(void *ctx, uint16_t (*task_func)(void))
+#else
+RTPT_TaskID RTPT_CreateTask(void *ctx, uint16_t (*task_func)(void*))
+#endif
+{
     if (RTPT_tasks_count >= RTPT_MAX_TASKS) return -1;
 
     RTPT_Task *new_task = &RTPT_tasks[RTPT_tasks_count];
     new_task->task_func = task_func;
+#if RTPT_CONFIG_STATIC == 0
     new_task->ctx = ctx;
+#endif
     new_task->next_tick = 0;
     new_task->state = RTPT_STATE_SKIPPED;
     LC_INIT(((RTPT_TaskContext*)ctx)->lc);
@@ -175,6 +182,12 @@ static void on_exit_handler(int signum) {
 #elif RTPT_TARGET == RTPT_TARGET_PIC_XC8
     #if RTPT_CONFIG_PIC_TMR == 10 ||  RTPT_CONFIG_PIC_TMR == 11 || RTPT_CONFIG_PIC_INT == 0
         static uint8_t timer_high;  // higher 8-bit for 8-bit timers
+        static void carry_timer0(void) {
+            if (++timer_high == 0) {
+                RTPT_PIC_TMR_INIT(timer_high, TMR0);
+                ++RTPT_tick;
+            }
+        }
     #endif
     #if RTPT_CONFIG_PIC_INT == 1
         static void __interrupt() RTPT_isr() {
@@ -186,10 +199,7 @@ static void on_exit_handler(int signum) {
                 }
             #elif RTPT_CONFIG_PIC_TMR == 10
                 if (TMR0IF) {
-                    if (++timer_high == 0) {
-                        RTPT_PIC_TMR_INIT(timer_high, TMR0);
-                        ++RTPT_tick;
-                    }
+                    carry_timer0();
                     TMR0IF = 0;
                 }
             #elif RTPT_CONFIG_PIC_TMR == 1
@@ -293,10 +303,7 @@ void RTPT_StartTasks() {
                 ++RTPT_tick;
             #elif RTPT_TARGET == RTPT_TARGET_PIC_XC8 && RTPT_CONFIG_PIC_INT == 0
                 if (!TMR0) {
-                    if (++timer_high == 0) {
-                        RTPT_PIC_TMR_INIT(timer_high, TMR0);
-                        ++RTPT_tick;
-                    }
+                    carry_timer0();
                 }
             #endif
 
@@ -304,7 +311,11 @@ void RTPT_StartTasks() {
         }
 
         RTPT_Task *task = &RTPT_tasks[task_id];
-        uint16_t interval = task->task_func(task->ctx);
+        #if RTPT_CONFIG_STATIC == 1
+            uint16_t interval = task->task_func();
+        #else
+            uint16_t interval = task->task_func(task->ctx);
+        #endif
         if (interval == 0) task->state |= RTPT_STATE_EXITED;
 
         // sync tick counter
@@ -316,10 +327,7 @@ void RTPT_StartTasks() {
             ++RTPT_tick;
         #elif RTPT_TARGET == RTPT_TARGET_PIC_XC8 && RTPT_CONFIG_PIC_INT == 0
             if (!TMR0) {
-                if (++timer_high == 0) {
-                    RTPT_PIC_TMR_INIT(timer_high, TMR0);
-                    ++RTPT_tick;
-                }
+                carry_timer0();
             }
         #endif
 
